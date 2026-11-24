@@ -1,0 +1,1352 @@
+```html
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Ночное небо и звёзды</title>
+    <style>
+        /* Clean full-screen reset with zero scrollbars */
+        * {
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #000000;
+            color: #f5f7ff;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, Arial, sans-serif;
+            user-select: none;
+        }
+
+        /* Full-viewport responsive scene canvas */
+        #skyCanvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            cursor: pointer;
+        }
+
+        /* Pure darkness (#000000) overlay fading smoothly over ~2.4 seconds */
+        #darknessOverlay {
+            position: fixed;
+            inset: 0;
+            z-index: 15;
+            background-color: #000000;
+            opacity: 1;
+            pointer-events: none;
+            transition: opacity 2.4s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+
+        #darknessOverlay.is-faded {
+            opacity: 0;
+        }
+
+        /* Gentle top notification if autoplay is initially blocked */
+        #audioHint {
+            position: fixed;
+            top: max(18px, env(safe-area-inset-top));
+            left: 50%;
+            z-index: 25;
+            transform: translate(-50%, -8px);
+            padding: 8px 16px;
+            border-radius: 999px;
+            background: rgba(8, 13, 26, 0.78);
+            border: 1px solid rgba(196, 218, 255, 0.28);
+            backdrop-filter: blur(8px);
+            color: #f5f7ff;
+            font-size: 12.5px;
+            font-weight: 500;
+            letter-spacing: 0.02em;
+            white-space: nowrap;
+            opacity: 0;
+            pointer-events: none;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55), 0 0 18px rgba(145, 184, 255, 0.16);
+            transition: opacity 0.35s ease, transform 0.35s ease;
+        }
+
+        #audioHint.is-visible {
+            opacity: 1;
+            transform: translate(-50%, 0);
+        }
+
+        /* Compact bottom-right playback, mute, and volume controls */
+        .media-controls {
+            position: fixed;
+            right: max(14px, env(safe-area-inset-right));
+            bottom: max(14px, env(safe-area-inset-bottom));
+            z-index: 25;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 10px 6px 6px;
+            border-radius: 999px;
+            border: 1px solid rgba(196, 218, 255, 0.24);
+            background: rgba(8, 13, 26, 0.74);
+            backdrop-filter: blur(8px);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.52);
+            opacity: 0.88;
+            transition: opacity 0.2s ease, background-color 0.2s ease, border-color 0.2s ease;
+        }
+
+        .media-controls:hover {
+            opacity: 1;
+            background: rgba(15, 24, 46, 0.9);
+            border-color: rgba(214, 232, 255, 0.44);
+        }
+
+        .ctrl-btn {
+            width: 32px;
+            height: 32px;
+            border-radius: 999px;
+            border: 1px solid rgba(196, 218, 255, 0.22);
+            background: rgba(15, 23, 42, 0.84);
+            color: #f5f7ff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            flex-shrink: 0;
+            transition: transform 0.14s ease, background-color 0.2s ease, color 0.2s ease;
+        }
+
+        .ctrl-btn:hover {
+            background: rgba(28, 42, 74, 0.94);
+        }
+
+        .ctrl-btn:active {
+            transform: scale(0.93);
+        }
+
+        .ctrl-btn.is-muted {
+            color: #94a3b8;
+        }
+
+        #volumeRange {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 72px;
+            height: 4px;
+            border-radius: 999px;
+            background: linear-gradient(
+                to right,
+                rgba(210, 228, 255, 0.9) var(--vol, 75%),
+                rgba(148, 163, 184, 0.26) var(--vol, 75%)
+            );
+            outline: none;
+            cursor: pointer;
+        }
+
+        #volumeRange::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #f5f7ff;
+            border: 1px solid rgba(10, 15, 28, 0.65);
+            box-shadow: 0 0 8px rgba(210, 228, 255, 0.65);
+            cursor: pointer;
+        }
+
+        #volumeRange::-moz-range-thumb {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #f5f7ff;
+            border: 1px solid rgba(10, 15, 28, 0.65);
+            box-shadow: 0 0 8px rgba(210, 228, 255, 0.65);
+            cursor: pointer;
+        }
+
+        /* Non-blocking error display */
+        #errorBanner {
+            position: fixed;
+            left: 12px;
+            right: 12px;
+            bottom: 64px;
+            z-index: 40;
+            display: none;
+            padding: 10px 14px;
+            border-radius: 12px;
+            background: rgba(45, 10, 18, 0.92);
+            border: 1px solid rgba(248, 113, 113, 0.55);
+            color: #fee2e2;
+            font-size: 12.5px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="skyCanvas" aria-label="Ночное небо с вращающейся пластинкой Lil Peep, звёздами и девушкой на левом холме"></canvas>
+
+    <!-- Initial pure darkness layer (#000000) -->
+    <div id="darknessOverlay"></div>
+
+    <!-- Prompt shown if browser blocks initial autoplay -->
+    <div id="audioHint" role="status">Нажмите на экран, чтобы включить звук</div>
+
+    <!-- Compact corner controls for play/pause, mute, and volume -->
+    <div class="media-controls" aria-label="Управление воспроизведением">
+        <button id="togglePlayBtn" type="button" class="ctrl-btn is-muted" title="Воспроизвести" aria-label="Воспроизвести">
+            <svg id="playIcon" viewBox="0 0 24 24" width="15" height="15" fill="currentColor" stroke="none">
+                <polygon points="6 4 20 12 6 20 6 4"></polygon>
+            </svg>
+        </button>
+        <button id="muteBtn" type="button" class="ctrl-btn" title="Выключить звук" aria-label="Выключить звук">
+            <svg id="muteIcon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                <path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path>
+            </svg>
+        </button>
+        <input id="volumeRange" type="range" min="0" max="100" value="75" title="Громкость" aria-label="Громкость">
+    </div>
+
+    <div id="errorBanner"></div>
+
+    <script>
+        (function () {
+            'use strict';
+
+            const errorBanner = document.getElementById('errorBanner');
+
+            // Safe error reporter wrapped in try/catch
+            function reportError(err) {
+                try {
+                    if (!errorBanner) return;
+                    const message = err && err.message ? err.message : String(err || 'Ошибка');
+                    errorBanner.textContent = message;
+                    errorBanner.style.display = 'block';
+                } catch (_) {}
+            }
+
+            window.addEventListener('error', function (event) {
+                reportError(event.error || event.message);
+            });
+
+            window.addEventListener('unhandledrejection', function (event) {
+                reportError(event.reason);
+            });
+
+            // =====================================================================
+            // 1. AUDIO PLAYBACK FOR ./lilpeepnuts.mp3 (START TO FINISH, NO LOOP)
+            // =====================================================================
+            const togglePlayBtn = document.getElementById('togglePlayBtn');
+            const playIcon = document.getElementById('playIcon');
+            const muteBtn = document.getElementById('muteBtn');
+            const muteIcon = document.getElementById('muteIcon');
+            const volumeRange = document.getElementById('volumeRange');
+            const audioHint = document.getElementById('audioHint');
+
+            let audioElement = null;
+            let hasFinishedTrack = false;
+            let isMuted = false;
+            let currentVolume = 0.75;
+
+            function showHint(visible) {
+                try {
+                    if (!audioHint) return;
+                    audioHint.classList.toggle('is-visible', Boolean(visible));
+                } catch (_) {}
+            }
+
+            function updateVolumeBar(vol) {
+                try {
+                    if (!volumeRange) return;
+                    const percent = Math.max(0, Math.min(100, Math.round(vol * 100)));
+                    volumeRange.value = String(percent);
+                    volumeRange.style.setProperty('--vol', percent + '%');
+                } catch (_) {}
+            }
+
+            function updatePlayButton(playing) {
+                try {
+                    if (!togglePlayBtn || !playIcon) return;
+                    togglePlayBtn.classList.toggle('is-muted', !playing);
+                    togglePlayBtn.setAttribute('title', playing ? 'Пауза' : 'Воспроизвести');
+                    togglePlayBtn.setAttribute('aria-label', playing ? 'Пауза' : 'Воспроизвести');
+
+                    if (playing) {
+                        playIcon.innerHTML =
+                            '<rect x="6" y="4" width="4" height="16" rx="1"></rect>' +
+                            '<rect x="14" y="4" width="4" height="16" rx="1"></rect>';
+                    } else {
+                        playIcon.innerHTML =
+                            '<polygon points="6 4 20 12 6 20 6 4"></polygon>';
+                    }
+                } catch (_) {}
+            }
+
+            function updateMuteButton(muted) {
+                try {
+                    if (!muteBtn || !muteIcon) return;
+                    muteBtn.classList.toggle('is-muted', Boolean(muted));
+                    muteBtn.setAttribute('title', muted ? 'Включить звук' : 'Выключить звук');
+                    muteBtn.setAttribute('aria-label', muted ? 'Включить звук' : 'Выключить звук');
+
+                    if (muted) {
+                        muteIcon.innerHTML =
+                            '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>' +
+                            '<line x1="23" y1="9" x2="17" y2="15"></line>' +
+                            '<line x1="17" y1="9" x2="23" y2="15"></line>';
+                    } else {
+                        muteIcon.innerHTML =
+                            '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>' +
+                            '<path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>' +
+                            '<path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path>';
+                    }
+                } catch (_) {}
+            }
+
+            function getAudioElement() {
+                try {
+                    if (audioElement) return audioElement;
+
+                    const el = new Audio('./lilpeepnuts.mp3');
+                    el.loop = false;
+                    el.preload = 'auto';
+                    el.volume = currentVolume;
+                    el.muted = isMuted;
+
+                    el.addEventListener('play', function () {
+                        hasFinishedTrack = false;
+                        showHint(false);
+                        updatePlayButton(true);
+                    });
+
+                    el.addEventListener('pause', function () {
+                        updatePlayButton(false);
+                    });
+
+                    el.addEventListener('ended', function () {
+                        hasFinishedTrack = true;
+                        showHint(false);
+                        updatePlayButton(false);
+                    });
+
+                    el.addEventListener('error', function () {
+                        showHint(false);
+                        updatePlayButton(false);
+                    });
+
+                    audioElement = el;
+                    return audioElement;
+                } catch (err) {
+                    reportError(err);
+                    return null;
+                }
+            }
+
+            function playTrackFromStart() {
+                try {
+                    const el = getAudioElement();
+                    if (!el) return;
+
+                    hasFinishedTrack = false;
+                    el.volume = currentVolume;
+                    el.muted = isMuted;
+                    el.currentTime = 0;
+
+                    const req = el.play();
+                    if (req && typeof req.then === 'function') {
+                        req
+                            .then(function () {
+                                showHint(false);
+                                updatePlayButton(true);
+                            })
+                            .catch(function () {
+                                updatePlayButton(false);
+                                showHint(true);
+                            });
+                    }
+                } catch (err) {
+                    reportError(err);
+                }
+            }
+
+            function resumeOnFirstInteraction() {
+                try {
+                    const el = getAudioElement();
+                    if (!el || hasFinishedTrack) return;
+                    if (el.paused) {
+                        el.volume = currentVolume;
+                        el.muted = isMuted;
+                        const req = el.play();
+                        if (req && typeof req.then === 'function') {
+                            req
+                                .then(function () {
+                                    showHint(false);
+                                    updatePlayButton(true);
+                                })
+                                .catch(function () {});
+                        }
+                    }
+                } catch (_) {}
+            }
+
+            window.addEventListener('pointerdown', resumeOnFirstInteraction, { passive: true });
+            window.addEventListener('click', resumeOnFirstInteraction, { passive: true });
+            window.addEventListener('keydown', resumeOnFirstInteraction, { passive: true });
+
+            togglePlayBtn.addEventListener('click', function (e) {
+                e.stopPropagation();
+                try {
+                    const el = getAudioElement();
+                    if (!el) return;
+
+                    if (el.paused) {
+                        if (hasFinishedTrack) {
+                            playTrackFromStart();
+                        } else {
+                            el.volume = currentVolume;
+                            el.muted = isMuted;
+                            const req = el.play();
+                            if (req && typeof req.then === 'function') {
+                                req
+                                    .then(function () {
+                                        showHint(false);
+                                        updatePlayButton(true);
+                                    })
+                                    .catch(function () {
+                                        showHint(true);
+                                    });
+                            }
+                        }
+                    } else {
+                        el.pause();
+                        showHint(false);
+                        updatePlayButton(false);
+                    }
+                } catch (err) {
+                    reportError(err);
+                }
+            });
+
+            muteBtn.addEventListener('click', function (e) {
+                e.stopPropagation();
+                try {
+                    isMuted = !isMuted;
+                    updateMuteButton(isMuted);
+                    const el = getAudioElement();
+                    if (el) {
+                        el.muted = isMuted;
+                    }
+                } catch (err) {
+                    reportError(err);
+                }
+            });
+
+            volumeRange.addEventListener('input', function (e) {
+                e.stopPropagation();
+                try {
+                    const raw = Number(volumeRange.value) / 100;
+                    currentVolume = Math.max(0, Math.min(1, isNaN(raw) ? 0.75 : raw));
+                    updateVolumeBar(currentVolume);
+                    if (audioElement) {
+                        audioElement.volume = currentVolume;
+                        if (currentVolume > 0 && isMuted) {
+                            isMuted = false;
+                            audioElement.muted = false;
+                            updateMuteButton(false);
+                        }
+                    }
+                } catch (err) {
+                    reportError(err);
+                }
+            });
+
+            volumeRange.addEventListener('pointerdown', function (e) {
+                e.stopPropagation();
+            });
+
+            updateVolumeBar(currentVolume);
+            updateMuteButton(isMuted);
+
+            // =====================================================================
+            // 2. CANVAS NIGHT SKY SCENE (PURE MATH SMOOTHSTEP, ZERO TWEEN LIBRARIES)
+            // =====================================================================
+            const canvas = document.getElementById('skyCanvas');
+            const ctx = canvas.getContext('2d');
+            const darknessOverlay = document.getElementById('darknessOverlay');
+
+            let width = Math.max(320, window.innerWidth);
+            let height = Math.max(480, window.innerHeight);
+            let dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+            let sceneStartTime = 0;
+            let lastFrameTime = 0;
+            let nextShootingStarTime = 0;
+            let vinylRotation = 0;
+            let rafId = null;
+
+            const stars = [];
+            const shootingStars = [];
+
+            function isAudioPlaying() {
+                try {
+                    return Boolean(audioElement && !audioElement.paused && !audioElement.ended);
+                } catch (_) {
+                    return false;
+                }
+            }
+
+            function smoothstep(t) {
+                const c = Math.max(0, Math.min(1, t));
+                return c * c * (3 - 2 * c);
+            }
+
+            function populateStars() {
+                stars.length = 0;
+                const count = Math.min(310, Math.max(145, Math.floor((width * height) / 3500)));
+                for (let i = 0; i < count; i++) {
+                    const tint = Math.random();
+                    let rgb = '245, 247, 255';
+                    if (tint < 0.24) rgb = '192, 224, 255';
+                    else if (tint > 0.84) rgb = '255, 246, 232';
+
+                    stars.push({
+                        x: Math.random() * width,
+                        y: Math.random() * height * 0.86,
+                        r: 0.65 + Math.random() * 1.9,
+                        alpha: 0.34 + Math.random() * 0.66,
+                        speed: 0.0012 + Math.random() * 0.0032,
+                        phase: Math.random() * Math.PI * 2,
+                        rgb: rgb,
+                        hasGlow: Math.random() > 0.72
+                    });
+                }
+            }
+
+            function resizeCanvas() {
+                try {
+                    width = Math.max(320, window.innerWidth);
+                    height = Math.max(480, window.innerHeight);
+                    dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+                    canvas.width = Math.floor(width * dpr);
+                    canvas.height = Math.floor(height * dpr);
+                    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+                    populateStars();
+                } catch (err) {
+                    reportError(err);
+                }
+            }
+
+            window.addEventListener('resize', resizeCanvas);
+            resizeCanvas();
+
+            function spawnShootingStar(now) {
+                const startX = width * (0.28 + Math.random() * 0.66);
+                const startY = height * (0.05 + Math.random() * 0.24);
+                const angle = Math.PI * (0.69 + Math.random() * 0.20);
+                const speed = 7.6 + Math.random() * 5.2;
+
+                shootingStars.push({
+                    x: startX,
+                    y: startY,
+                    vx: Math.cos(angle) * speed,
+                    vy: Math.sin(angle) * speed,
+                    length: 86 + Math.random() * 88,
+                    age: 0,
+                    life: 46 + Math.floor(Math.random() * 24)
+                });
+
+                nextShootingStarTime = now + 2100 + Math.random() * 3300;
+            }
+
+            function drawNightSky(now, fade) {
+                const skyGrad = ctx.createLinearGradient(0, 0, 0, height);
+                skyGrad.addColorStop(0, '#010308');
+                skyGrad.addColorStop(0.45, '#060c1e');
+                skyGrad.addColorStop(0.84, '#0c1630');
+                skyGrad.addColorStop(1, '#040710');
+                ctx.fillStyle = skyGrad;
+                ctx.fillRect(0, 0, width, height);
+
+                // Subtle nebula / milky band across the upper night sky
+                ctx.save();
+                ctx.globalAlpha = fade;
+                ctx.translate(width * 0.52, height * 0.34);
+                ctx.rotate(-0.34);
+
+                const nebulaGrad = ctx.createRadialGradient(
+                    0, 0, Math.min(width, height) * 0.04,
+                    0, 0, Math.max(width, height) * 0.56
+                );
+                nebulaGrad.addColorStop(0, 'rgba(154, 192, 255, 0.14)');
+                nebulaGrad.addColorStop(0.42, 'rgba(104, 126, 228, 0.085)');
+                nebulaGrad.addColorStop(0.75, 'rgba(56, 86, 176, 0.038)');
+                nebulaGrad.addColorStop(1, 'rgba(6, 12, 30, 0)');
+
+                ctx.scale(1.45, 0.42);
+                ctx.fillStyle = nebulaGrad;
+                ctx.beginPath();
+                ctx.arc(0, 0, Math.max(width, height) * 0.56, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
+
+            function drawStars(now, fade) {
+                if (fade <= 0.01) return;
+
+                for (let i = 0; i < stars.length; i++) {
+                    const st = stars[i];
+                    const twinkle = 0.55 + 0.45 * Math.sin(now * st.speed + st.phase);
+                    const a = st.alpha * twinkle * fade;
+
+                    if (st.hasGlow) {
+                        const glowR = st.r * 3.4;
+                        const g = ctx.createRadialGradient(st.x, st.y, 0, st.x, st.y, glowR);
+                        g.addColorStop(0, 'rgba(' + st.rgb + ', ' + (a * 0.44) + ')');
+                        g.addColorStop(1, 'rgba(' + st.rgb + ', 0)');
+                        ctx.fillStyle = g;
+                        ctx.beginPath();
+                        ctx.arc(st.x, st.y, glowR, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+
+                    ctx.fillStyle = 'rgba(' + st.rgb + ', ' + a + ')';
+                    ctx.beginPath();
+                    ctx.arc(st.x, st.y, st.r, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+
+            // Central stylized portrait of Lil Peep inside the rotating vinyl label
+            function drawLilPeepPortrait() {
+                // Warm soft aura & backdrop inside label
+                const bgGrad = ctx.createRadialGradient(0, -2, 2, 0, 2, 42);
+                bgGrad.addColorStop(0, '#fff2f7');
+                bgGrad.addColorStop(0.58, '#f5d7e8');
+                bgGrad.addColorStop(1, '#d3dcf5');
+                ctx.fillStyle = bgGrad;
+                ctx.fillRect(-42, -42, 84, 84);
+
+                // Warm rim spotlight from upper left
+                const rimLight = ctx.createRadialGradient(-14, -15, 2, -6, -6, 36);
+                rimLight.addColorStop(0, 'rgba(255, 250, 245, 0.72)');
+                rimLight.addColorStop(1, 'rgba(255, 250, 245, 0)');
+                ctx.fillStyle = rimLight;
+                ctx.beginPath();
+                ctx.arc(-8, -8, 32, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Back hair volume (platinum-blonde / soft rose tint)
+                const backHairGrad = ctx.createLinearGradient(-22, -26, 22, 22);
+                backHairGrad.addColorStop(0, '#fff9fc');
+                backHairGrad.addColorStop(0.6, '#f8d7e6');
+                backHairGrad.addColorStop(1, '#e6bfd4');
+                ctx.fillStyle = backHairGrad;
+                ctx.beginPath();
+                ctx.moveTo(-17.5, 11);
+                ctx.bezierCurveTo(-21, -7, -17, -23.5, 0, -24.5);
+                ctx.bezierCurveTo(17, -23.5, 21, -7, 17.5, 11);
+                ctx.quadraticCurveTo(10, 6, 0, 7);
+                ctx.quadraticCurveTo(-10, 6, -17.5, 11);
+                ctx.closePath();
+                ctx.fill();
+
+                // Relaxed dark collar / hoodie detail
+                const hoodieGrad = ctx.createLinearGradient(-24, 15, 24, 38);
+                hoodieGrad.addColorStop(0, '#23293a');
+                hoodieGrad.addColorStop(0.6, '#151924');
+                hoodieGrad.addColorStop(1, '#0b0e16');
+                ctx.fillStyle = hoodieGrad;
+                ctx.beginPath();
+                ctx.moveTo(-27, 36);
+                ctx.quadraticCurveTo(-22, 18, -9.5, 15.5);
+                ctx.quadraticCurveTo(0, 21.5, 9.5, 15.5);
+                ctx.quadraticCurveTo(22, 18, 27, 36);
+                ctx.closePath();
+                ctx.fill();
+
+                // Hoodie hood fold & drawstring accents
+                ctx.strokeStyle = 'rgba(244, 214, 228, 0.42)';
+                ctx.lineWidth = 1.25;
+                ctx.lineCap = 'round';
+                ctx.beginPath();
+                ctx.moveTo(-13.5, 16.5);
+                ctx.quadraticCurveTo(-9, 25, -4.5, 28);
+                ctx.moveTo(13.5, 16.5);
+                ctx.quadraticCurveTo(9, 25, 4.5, 28);
+                ctx.stroke();
+
+                ctx.strokeStyle = 'rgba(255, 244, 248, 0.72)';
+                ctx.lineWidth = 1.1;
+                ctx.beginPath();
+                ctx.moveTo(-3.2, 21.5);
+                ctx.lineTo(-2.6, 31.5);
+                ctx.moveTo(3.2, 21.5);
+                ctx.lineTo(2.6, 31.5);
+                ctx.stroke();
+
+                // Neck with subtle shading
+                const neckGrad = ctx.createLinearGradient(-6, 10, 6, 20);
+                neckGrad.addColorStop(0, '#f4d3c5');
+                neckGrad.addColorStop(1, '#dfb5a6');
+                ctx.fillStyle = neckGrad;
+                ctx.beginPath();
+                ctx.rect(-5.6, 10.5, 11.2, 8.5);
+                ctx.fill();
+
+                // Face contour (youthful jaw & cheekbones)
+                const faceGrad = ctx.createLinearGradient(-13, -15, 13, 14);
+                faceGrad.addColorStop(0, '#fff0e8');
+                faceGrad.addColorStop(0.55, '#fae0d3');
+                faceGrad.addColorStop(1, '#ecc8b9');
+                ctx.fillStyle = faceGrad;
+                ctx.beginPath();
+                ctx.moveTo(-11.8, -6.5);
+                ctx.bezierCurveTo(-12.2, -14.5, -5.5, -17.2, 0, -17.2);
+                ctx.bezierCurveTo(5.5, -17.2, 12.2, -14.5, 11.8, -6.5);
+                ctx.bezierCurveTo(11.6, 2.2, 8.2, 9.6, 0, 13.8);
+                ctx.bezierCurveTo(-8.2, 9.6, -11.6, 2.2, -11.8, -6.5);
+                ctx.closePath();
+                ctx.fill();
+
+                // Soft cheek warmth
+                ctx.fillStyle = 'rgba(244, 156, 178, 0.24)';
+                ctx.beginPath();
+                ctx.ellipse(-7.5, 1.5, 3.6, 2.1, -0.15, 0, Math.PI * 2);
+                ctx.ellipse(7.5, 1.5, 3.6, 2.1, 0.15, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Expressive dark eyes + subtle under-eye shadow
+                ctx.fillStyle = 'rgba(138, 104, 116, 0.34)';
+                ctx.beginPath();
+                ctx.ellipse(-5.3, -0.4, 3.2, 1.3, 0, 0, Math.PI * 2);
+                ctx.ellipse(5.3, -0.4, 3.2, 1.3, 0, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.fillStyle = '#171b26';
+                ctx.beginPath();
+                ctx.ellipse(-5.3, -1.7, 2.1, 2.4, 0, 0, Math.PI * 2);
+                ctx.ellipse(5.3, -1.7, 2.1, 2.4, 0, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Eye catchlights
+                ctx.fillStyle = '#ffffff';
+                ctx.beginPath();
+                ctx.arc(-6.0, -2.5, 0.85, 0, Math.PI * 2);
+                ctx.arc(4.6, -2.5, 0.85, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Soft eyebrows
+                ctx.strokeStyle = '#c9a6b5';
+                ctx.lineWidth = 1.25;
+                ctx.lineCap = 'round';
+                ctx.beginPath();
+                ctx.moveTo(-8.4, -5.2);
+                ctx.quadraticCurveTo(-5.3, -6.6, -2.4, -5.0);
+                ctx.moveTo(2.4, -5.0);
+                ctx.quadraticCurveTo(5.3, -6.6, 8.4, -5.2);
+                ctx.stroke();
+
+                // Straight nose with subtle bridge & tip shadow
+                ctx.strokeStyle = 'rgba(168, 126, 118, 0.65)';
+                ctx.lineWidth = 1.15;
+                ctx.beginPath();
+                ctx.moveTo(0.4, -3.5);
+                ctx.lineTo(-0.5, 2.8);
+                ctx.quadraticCurveTo(0.8, 4.3, 2.0, 3.5);
+                ctx.stroke();
+
+                // Softly parted lips
+                ctx.fillStyle = '#c97b8c';
+                ctx.beginPath();
+                ctx.moveTo(-3.6, 7.6);
+                ctx.quadraticCurveTo(-1.5, 6.5, 0, 7.2);
+                ctx.quadraticCurveTo(1.5, 6.5, 3.6, 7.6);
+                ctx.quadraticCurveTo(1.6, 9.7, 0, 9.5);
+                ctx.quadraticCurveTo(-1.6, 9.7, -3.6, 7.6);
+                ctx.closePath();
+                ctx.fill();
+
+                // Subtle parted gap between lips
+                ctx.strokeStyle = '#6d3946';
+                ctx.lineWidth = 0.85;
+                ctx.beginPath();
+                ctx.moveTo(-2.5, 8.0);
+                ctx.quadraticCurveTo(0, 8.5, 2.5, 8.0);
+                ctx.stroke();
+
+                // Iconic tiny motifs (small heart near cheek, tiny cross above brow, tiny star accent)
+                // 1) Tiny heart near left cheek
+                ctx.fillStyle = '#e15b86';
+                ctx.beginPath();
+                ctx.moveTo(-7.2, 5.2);
+                ctx.bezierCurveTo(-7.2, 4.1, -8.8, 4.1, -8.8, 5.3);
+                ctx.bezierCurveTo(-8.8, 6.3, -7.2, 7.0, -7.2, 7.4);
+                ctx.bezierCurveTo(-7.2, 7.0, -5.6, 6.3, -5.6, 5.3);
+                ctx.bezierCurveTo(-5.6, 4.1, -7.2, 4.1, -7.2, 5.2);
+                ctx.fill();
+
+                // 2) Tiny cross accent near right brow/temple
+                ctx.strokeStyle = '#383f54';
+                ctx.lineWidth = 1.05;
+                ctx.beginPath();
+                ctx.moveTo(8.3, -6.4);
+                ctx.lineTo(8.3, -2.6);
+                ctx.moveTo(6.6, -4.6);
+                ctx.lineTo(10.0, -4.6);
+                ctx.stroke();
+
+                // 3) Tiny star accent near right cheekbone
+                ctx.fillStyle = '#383f54';
+                ctx.beginPath();
+                ctx.arc(7.6, 4.8, 1.15, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Distinctive parted platinum-blonde / pink-tinted fringe framing the forehead
+                const fringeGrad = ctx.createLinearGradient(-16, -22, 16, 2);
+                fringeGrad.addColorStop(0, '#ffffff');
+                fringeGrad.addColorStop(0.52, '#ffe0ed');
+                fringeGrad.addColorStop(1, '#f7bfd6');
+                ctx.fillStyle = fringeGrad;
+
+                // Left parted lock sweeping across forehead
+                ctx.beginPath();
+                ctx.moveTo(-1.2, -17.5);
+                ctx.bezierCurveTo(-9.5, -18.5, -15.5, -13.5, -15.2, -3.5);
+                ctx.lineTo(-11.8, -6.8);
+                ctx.lineTo(-9.4, -2.5);
+                ctx.lineTo(-7.2, -7.4);
+                ctx.lineTo(-4.4, -3.8);
+                ctx.lineTo(-2.5, -9.2);
+                ctx.lineTo(-0.8, -6.5);
+                ctx.closePath();
+                ctx.fill();
+
+                // Right parted lock framing right side of forehead
+                ctx.beginPath();
+                ctx.moveTo(1.2, -17.5);
+                ctx.bezierCurveTo(9.5, -18.5, 15.5, -13.5, 15.2, -3.5);
+                ctx.lineTo(11.8, -6.8);
+                ctx.lineTo(9.4, -2.5);
+                ctx.lineTo(7.2, -7.4);
+                ctx.lineTo(4.4, -3.8);
+                ctx.lineTo(2.5, -9.2);
+                ctx.lineTo(0.8, -6.5);
+                ctx.closePath();
+                ctx.fill();
+
+                // Delicate hair strand highlights
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+                ctx.lineWidth = 0.85;
+                ctx.beginPath();
+                ctx.moveTo(-4.5, -15.2);
+                ctx.quadraticCurveTo(-9.5, -12.5, -12.5, -6.5);
+                ctx.moveTo(4.5, -15.2);
+                ctx.quadraticCurveTo(9.5, -12.5, 12.5, -6.5);
+                ctx.stroke();
+            }
+
+            // Luminous rotating vinyl record in upper night sky replacing the moon
+            function drawLilPeepVinylRecord(now, dt, fade) {
+                try {
+                    const playing = isAudioPlaying();
+                    const spinSpeed = playing ? 1.35 : 0.12;
+                    vinylRotation = (vinylRotation + spinSpeed * dt) % (Math.PI * 2);
+
+                    const compact = width < 640;
+                    const cx = compact ? width * 0.70 : width * 0.73;
+                    const cy = compact ? height * 0.21 : height * 0.225;
+                    const radius = Math.min(width, height) * (compact ? 0.136 : 0.118);
+                    const pulse = 1 + Math.sin(now * 0.0016) * (playing ? 0.025 : 0.012);
+
+                    ctx.save();
+                    ctx.globalAlpha = fade;
+
+                    // Soft luminous moon-like outer aura
+                    const aura = ctx.createRadialGradient(cx, cy, radius * 0.52, cx, cy, radius * 2.55 * pulse);
+                    aura.addColorStop(0, playing ? 'rgba(224, 190, 255, 0.30)' : 'rgba(186, 212, 255, 0.19)');
+                    aura.addColorStop(0.55, 'rgba(124, 152, 228, 0.095)');
+                    aura.addColorStop(1, 'rgba(124, 152, 228, 0)');
+                    ctx.fillStyle = aura;
+                    ctx.beginPath();
+                    ctx.arc(cx, cy, radius * 2.55 * pulse, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    // Rotating vinyl body
+                    ctx.save();
+                    ctx.translate(cx, cy);
+                    ctx.rotate(vinylRotation);
+
+                    const vinylGrad = ctx.createRadialGradient(0, 0, radius * 0.26, 0, 0, radius);
+                    vinylGrad.addColorStop(0, '#202638');
+                    vinylGrad.addColorStop(0.36, '#111622');
+                    vinylGrad.addColorStop(0.86, '#080b13');
+                    vinylGrad.addColorStop(1, '#1f2a42');
+                    ctx.fillStyle = vinylGrad;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, radius, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    // Crisp outer rim
+                    ctx.strokeStyle = 'rgba(232, 242, 255, 0.48)';
+                    ctx.lineWidth = 1.4;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, radius - 0.7, 0, Math.PI * 2);
+                    ctx.stroke();
+
+                    // Fine concentric grooves
+                    const grooveCount = 15;
+                    for (let i = 1; i <= grooveCount; i++) {
+                        const rGroove = radius * (0.39 + (i / (grooveCount + 1)) * 0.55);
+                        ctx.strokeStyle = i % 3 === 0
+                            ? 'rgba(218, 232, 255, 0.15)'
+                            : 'rgba(150, 174, 216, 0.08)';
+                        ctx.lineWidth = 0.8;
+                        ctx.beginPath();
+                        ctx.arc(0, 0, rGroove, 0, Math.PI * 2);
+                        ctx.stroke();
+                    }
+
+                    // Rotating vinyl sheen arcs
+                    for (let s = 0; s < 2; s++) {
+                        const a0 = s * Math.PI + 0.35;
+                        const sheen = ctx.createLinearGradient(
+                            Math.cos(a0) * radius,
+                            Math.sin(a0) * radius,
+                            Math.cos(a0 + 0.9) * radius * 0.4,
+                            Math.sin(a0 + 0.9) * radius * 0.4
+                        );
+                        sheen.addColorStop(0, 'rgba(245, 247, 255, 0.16)');
+                        sheen.addColorStop(1, 'rgba(245, 247, 255, 0)');
+                        ctx.fillStyle = sheen;
+                        ctx.beginPath();
+                        ctx.moveTo(0, 0);
+                        ctx.arc(0, 0, radius * 0.96, a0, a0 + 0.65);
+                        ctx.closePath();
+                        ctx.fill();
+                    }
+
+                    // Central circular label with Lil Peep portrait
+                    const labelRadius = radius * 0.38;
+                    ctx.save();
+                    ctx.beginPath();
+                    ctx.arc(0, 0, labelRadius, 0, Math.PI * 2);
+                    ctx.clip();
+
+                    const portraitScale = labelRadius / 36;
+                    ctx.scale(portraitScale, portraitScale);
+                    drawLilPeepPortrait();
+
+                    ctx.restore();
+
+                    // Spindle hole at center
+                    ctx.fillStyle = '#070a12';
+                    ctx.beginPath();
+                    ctx.arc(0, 0, Math.max(2.1, radius * 0.032), 0, Math.PI * 2);
+                    ctx.fill();
+
+                    // Label ring border
+                    ctx.strokeStyle = 'rgba(245, 247, 255, 0.42)';
+                    ctx.lineWidth = 1.15;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, labelRadius, 0, Math.PI * 2);
+                    ctx.stroke();
+
+                    ctx.restore();
+
+                    // Subtle glossy highlight across the vinyl surface
+                    const gloss = ctx.createLinearGradient(cx - radius, cy - radius, cx + radius, cy + radius);
+                    gloss.addColorStop(0, 'rgba(255, 255, 255, 0.14)');
+                    gloss.addColorStop(0.45, 'rgba(255, 255, 255, 0.025)');
+                    gloss.addColorStop(1, 'rgba(255, 255, 255, 0)');
+                    ctx.fillStyle = gloss;
+                    ctx.beginPath();
+                    ctx.arc(cx, cy, radius * 0.98, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    ctx.restore();
+                } catch (err) {
+                    reportError(err);
+                }
+            }
+
+            function drawShootingStars(now, fade) {
+                if (fade > 0.65 && now >= nextShootingStarTime) {
+                    spawnShootingStar(now);
+                }
+
+                for (let i = shootingStars.length - 1; i >= 0; i--) {
+                    const st = shootingStars[i];
+                    st.x += st.vx;
+                    st.y += st.vy;
+                    st.age++;
+
+                    const progress = st.age / st.life;
+                    const envelope = Math.sin(Math.min(1, progress) * Math.PI);
+                    const alpha = envelope * 0.95 * fade;
+
+                    const norm = Math.hypot(st.vx, st.vy) || 1;
+                    const tailX = st.x - (st.vx / norm) * st.length;
+                    const tailY = st.y - (st.vy / norm) * st.length;
+
+                    const grad = ctx.createLinearGradient(st.x, st.y, tailX, tailY);
+                    grad.addColorStop(0, 'rgba(255, 255, 255, ' + alpha + ')');
+                    grad.addColorStop(0.35, 'rgba(190, 224, 255, ' + (alpha * 0.58) + ')');
+                    grad.addColorStop(1, 'rgba(147, 197, 253, 0)');
+
+                    ctx.strokeStyle = grad;
+                    ctx.lineWidth = 2.1;
+                    ctx.lineCap = 'round';
+                    ctx.beginPath();
+                    ctx.moveTo(st.x, st.y);
+                    ctx.lineTo(tailX, tailY);
+                    ctx.stroke();
+
+                    ctx.fillStyle = 'rgba(255, 255, 255, ' + alpha + ')';
+                    ctx.beginPath();
+                    ctx.arc(st.x, st.y, 2.2, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    if (st.age >= st.life || st.x < -120 || st.y > height + 120) {
+                        shootingStars.splice(i, 1);
+                    }
+                }
+            }
+
+            // Left hill starting slightly above bottom-left edge and tapering toward the middle
+            function getHillGeometry(hillFade) {
+                const endX = Math.min(width * 0.52, Math.max(185, width * 0.49));
+                const leftY = height - Math.min(height * 0.22, Math.max(82, height * 0.145)) * hillFade;
+                const crestY = height - Math.min(height * 0.30, Math.max(122, height * 0.205)) * hillFade;
+                const endY = height - Math.min(height * 0.035, Math.max(12, height * 0.018)) * hillFade;
+                const crestX = endX * 0.43;
+
+                return {
+                    endX: endX,
+                    leftY: leftY,
+                    crestY: crestY,
+                    endY: endY,
+                    crestX: crestX
+                };
+            }
+
+            function sampleHillY(x, geom) {
+                const t = Math.max(0, Math.min(1, x / Math.max(1, geom.endX)));
+                const p0 = geom.leftY;
+                const p1 = geom.crestY - (geom.crestY - geom.leftY) * 0.12;
+                const p2 = geom.crestY + (geom.endY - geom.crestY) * 0.48;
+                const p3 = geom.endY;
+
+                const inv = 1 - t;
+                return (
+                    inv * inv * inv * p0 +
+                    3 * inv * inv * t * p1 +
+                    3 * inv * t * t * p2 +
+                    t * t * t * p3
+                );
+            }
+
+            function drawHill(now, hillFade) {
+                if (hillFade <= 0.005) return;
+
+                const geom = getHillGeometry(hillFade);
+
+                ctx.save();
+                ctx.globalAlpha = hillFade;
+
+                // Subtle horizon mist band
+                const horizon = ctx.createLinearGradient(0, height * 0.84, 0, height);
+                horizon.addColorStop(0, 'rgba(8, 14, 30, 0.20)');
+                horizon.addColorStop(1, 'rgba(3, 6, 13, 0.78)');
+                ctx.fillStyle = horizon;
+                ctx.beginPath();
+                ctx.moveTo(0, height);
+                ctx.lineTo(0, height - 20 * hillFade);
+                ctx.quadraticCurveTo(width * 0.56, height - 36 * hillFade, width, height - 14 * hillFade);
+                ctx.lineTo(width, height);
+                ctx.closePath();
+                ctx.fill();
+
+                // Left hill body
+                const hillGrad = ctx.createLinearGradient(0, geom.crestY, geom.endX, height);
+                hillGrad.addColorStop(0, '#1c2c4a');
+                hillGrad.addColorStop(0.52, '#0e162a');
+                hillGrad.addColorStop(1, '#040710');
+
+                ctx.fillStyle = hillGrad;
+                ctx.beginPath();
+                ctx.moveTo(-6, height + 6);
+                ctx.lineTo(-6, geom.leftY);
+                ctx.bezierCurveTo(
+                    geom.endX * 0.20,
+                    geom.crestY - (geom.crestY - geom.leftY) * 0.12,
+                    geom.endX * 0.68,
+                    geom.crestY + (geom.endY - geom.crestY) * 0.48,
+                    geom.endX,
+                    geom.endY
+                );
+                ctx.quadraticCurveTo(
+                    geom.endX + width * 0.02,
+                    geom.endY + (height - geom.endY) * 0.55,
+                    geom.endX + width * 0.04,
+                    height + 6
+                );
+                ctx.closePath();
+                ctx.fill();
+
+                // Soft rim light along hill crest
+                ctx.strokeStyle = 'rgba(204, 228, 255, 0.44)';
+                ctx.lineWidth = 1.7;
+                ctx.beginPath();
+                ctx.moveTo(-6, geom.leftY);
+                ctx.bezierCurveTo(
+                    geom.endX * 0.20,
+                    geom.crestY - (geom.crestY - geom.leftY) * 0.12,
+                    geom.endX * 0.68,
+                    geom.crestY + (geom.endY - geom.crestY) * 0.48,
+                    geom.endX,
+                    geom.endY
+                );
+                ctx.stroke();
+
+                // Subtle grass blades along the slope
+                const bladeCount = Math.max(14, Math.floor(geom.endX / 17));
+                ctx.lineCap = 'round';
+                for (let i = 1; i < bladeCount; i++) {
+                    const ratio = i / bladeCount;
+                    const gx = ratio * geom.endX * 0.90;
+                    const gy = sampleHillY(gx, geom);
+                    const bh = (5.0 + Math.sin(i * 2.9) * 2.5) * hillFade;
+                    const sway = Math.sin(now * 0.0017 + i * 0.85) * 2.0;
+
+                    ctx.strokeStyle = i % 3 === 0 ? 'rgba(190, 218, 255, 0.32)' : 'rgba(15, 25, 45, 0.85)';
+                    ctx.lineWidth = 1.2;
+                    ctx.beginPath();
+                    ctx.moveTo(gx, gy + 1);
+                    ctx.quadraticCurveTo(gx + sway * 0.5, gy - bh * 0.55, gx + sway - 1.2, gy - bh);
+                    ctx.stroke();
+                }
+
+                ctx.restore();
+            }
+
+            // Graceful feminine figure in casual black clothes with long straight snow-white hair
+            // cascading underneath and behind head/shoulders so her face is completely hidden
+            function drawGirlOnHill(now, hillFade, figFade) {
+                if (hillFade <= 0.2 || figFade <= 0.005) return;
+
+                const geom = getHillGeometry(hillFade);
+                const scale = Math.max(0.84, Math.min(1.28, Math.min(width / 460, height / 740)));
+                const drift = Math.sin(now * 0.0016) * 2.4;
+
+                const anchorX = geom.crestX * 0.78;
+                const anchorY = sampleHillY(anchorX, geom) - 1.0 * scale;
+                const slopeTilt = Math.atan2(
+                    sampleHillY(anchorX + 14, geom) - sampleHillY(anchorX - 14, geom),
+                    28
+                ) * 0.45;
+
+                ctx.save();
+                ctx.globalAlpha = figFade;
+                ctx.translate(anchorX, anchorY);
+                ctx.rotate(slopeTilt);
+                ctx.scale(scale, scale);
+
+                // Soft contact shadow on slope
+                ctx.fillStyle = 'rgba(2, 4, 10, 0.62)';
+                ctx.beginPath();
+                ctx.ellipse(4, 5.5, 62, 9.0, 0.02, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Long straight snow-white hair cascading underneath behind head/shoulders
+                const underHairGrad = ctx.createLinearGradient(-72, -16, 4, 14);
+                underHairGrad.addColorStop(0, '#ffffff');
+                underHairGrad.addColorStop(0.55, '#f5f7ff');
+                underHairGrad.addColorStop(1, '#dce6fa');
+
+                ctx.fillStyle = underHairGrad;
+                ctx.shadowBlur = 15;
+                ctx.shadowColor = 'rgba(225, 238, 255, 0.45)';
+
+                ctx.beginPath();
+                ctx.moveTo(-7, -14.5);
+                ctx.lineTo(-65 + drift * 0.65, -12.0 + drift * 0.18);
+                ctx.lineTo(-71 + drift * 0.90, 0.5 + drift * 0.25);
+                ctx.lineTo(-66 + drift * 0.80, 9.5 + drift * 0.22);
+                ctx.lineTo(-9, 8.8);
+                ctx.closePath();
+                ctx.fill();
+                ctx.shadowBlur = 0;
+
+                // Dark pants / leggings
+                const pantsGrad = ctx.createLinearGradient(10, -9, 58, 10);
+                pantsGrad.addColorStop(0, '#182132');
+                pantsGrad.addColorStop(0.55, '#0f1624');
+                pantsGrad.addColorStop(1, '#080c15');
+
+                ctx.fillStyle = pantsGrad;
+                ctx.beginPath();
+                ctx.moveTo(11, -7.2);
+                ctx.quadraticCurveTo(24, -9.6, 36, -4.4);
+                ctx.quadraticCurveTo(46, -0.2, 57, 3.6);
+                ctx.lineTo(55.5, 7.6);
+                ctx.quadraticCurveTo(44, 4.4, 34.5, 0.8);
+                ctx.quadraticCurveTo(23.5, -1.2, 11, 1.8);
+                ctx.closePath();
+                ctx.fill();
+
+                ctx.strokeStyle = 'rgba(205, 226, 255, 0.26)';
+                ctx.lineWidth = 1.0;
+                ctx.beginPath();
+                ctx.moveTo(11.5, -7.1);
+                ctx.quadraticCurveTo(24, -9.5, 36, -4.4);
+                ctx.quadraticCurveTo(46, -0.2, 56.5, 3.5);
+                ctx.stroke();
+
+                // Casual black relaxed sweater / longsleeve top
+                const sweaterGrad = ctx.createLinearGradient(-12, -14.5, 16, 5.5);
+                sweaterGrad.addColorStop(0, '#222c40');
+                sweaterGrad.addColorStop(0.52, '#131a28');
+                sweaterGrad.addColorStop(1, '#090e18');
+
+                ctx.fillStyle = sweaterGrad;
+                ctx.beginPath();
+                ctx.moveTo(-11, -12.0);
+                ctx.quadraticCurveTo(-1, -14.8, 13.5, -8.4);
+                ctx.quadraticCurveTo(16.5, -3.8, 13.5, 2.4);
+                ctx.quadraticCurveTo(3.5, 4.8, -11, 1.8);
+                ctx.closePath();
+                ctx.fill();
+
+                ctx.strokeStyle = 'rgba(215, 232, 255, 0.15)';
+                ctx.lineWidth = 0.9;
+                ctx.beginPath();
+                ctx.moveTo(-4, -9.5);
+                ctx.quadraticCurveTo(2, -4.0, 5, 1.5);
+                ctx.moveTo(3, -9.2);
+                ctx.quadraticCurveTo(7.5, -4.2, 9.5, 1.2);
+                ctx.stroke();
+
+                ctx.strokeStyle = 'rgba(220, 236, 255, 0.36)';
+                ctx.lineWidth = 1.1;
+                ctx.beginPath();
+                ctx.moveTo(-11, -12.0);
+                ctx.quadraticCurveTo(-1, -14.8, 13.2, -8.4);
+                ctx.stroke();
+
+                // Relaxed sleeve and hand resting along the slope
+                ctx.strokeStyle = '#182132';
+                ctx.lineWidth = 4.2;
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                ctx.beginPath();
+                ctx.moveTo(-2, -7.8);
+                ctx.lineTo(10.5, -0.4);
+                ctx.lineTo(22.5, 1.6);
+                ctx.stroke();
+
+                ctx.fillStyle = '#e4ecf9';
+                ctx.beginPath();
+                ctx.ellipse(25.2, 2.3, 3.8, 1.8, 0.08, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Upper snow-white hair strands concealing the face cleanly
+                const topHairGrad = ctx.createLinearGradient(-68, -16.5, -4, 9.5);
+                topHairGrad.addColorStop(0, '#ffffff');
+                topHairGrad.addColorStop(0.58, '#f5f7ff');
+                topHairGrad.addColorStop(1, '#dfe8fa');
+
+                ctx.fillStyle = topHairGrad;
+                ctx.beginPath();
+                ctx.moveTo(-5.5, -16.0);
+                ctx.lineTo(-57 + drift * 0.62, -13.2 + drift * 0.18);
+                ctx.lineTo(-65 + drift * 0.85, -1.5 + drift * 0.24);
+                ctx.lineTo(-60 + drift * 0.75, 7.6 + drift * 0.20);
+                ctx.lineTo(-7.5, 6.6);
+                ctx.closePath();
+                ctx.fill();
+
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.82)';
+                ctx.lineWidth = 1.05;
+                ctx.beginPath();
+                ctx.moveTo(-8.5, -13.2);
+                ctx.lineTo(-59 + drift * 0.72, -9.2 + drift * 0.20);
+                ctx.moveTo(-8.5, -9.0);
+                ctx.lineTo(-62 + drift * 0.82, -3.2 + drift * 0.23);
+                ctx.stroke();
+
+                ctx.strokeStyle = 'rgba(155, 180, 222, 0.34)';
+                ctx.lineWidth = 0.9;
+                ctx.beginPath();
+                ctx.moveTo(-9.5, -5.2);
+                ctx.lineTo(-61 + drift * 0.78, 2.4 + drift * 0.22);
+                ctx.moveTo(-9.5, -1.5);
+                ctx.lineTo(-58 + drift * 0.72, 6.4 + drift * 0.20);
+                ctx.stroke();
+
+                ctx.restore();
+            }
+
+            function renderFrame(now) {
+                try {
+                    const dt = lastFrameTime > 0 ? Math.min(0.1, Math.max(0, (now - lastFrameTime) / 1000)) : 0.016;
+                    lastFrameTime = now;
+
+                    const elapsedSec = (now - sceneStartTime) / 1000;
+                    const skyFade = smoothstep(elapsedSec / 2.4);
+                    const hillFade = smoothstep((elapsedSec - 0.5) / 1.5);
+                    const figFade = smoothstep((elapsedSec - 1.1) / 1.4);
+
+                    ctx.clearRect(0, 0, width, height);
+                    drawNightSky(now, skyFade);
+                    drawStars(now, skyFade);
+                    drawLilPeepVinylRecord(now, dt, skyFade);
+                    drawShootingStars(now, skyFade);
+                    drawHill(now, hillFade);
+                    drawGirlOnHill(now, hillFade, figFade);
+
+                    rafId = requestAnimationFrame(renderFrame);
+                } catch (err) {
+                    reportError(err);
+                }
+            }
+
+            function startScene() {
+                try {
+                    sceneStartTime = performance.now();
+                    lastFrameTime = sceneStartTime;
+                    vinylRotation = 0;
+                    nextShootingStarTime = sceneStartTime + 2200;
+                    shootingStars.length = 0;
+
+                    darknessOverlay.style.transition = 'none';
+                    darknessOverlay.classList.remove('is-faded');
+                    void darknessOverlay.offsetWidth;
+                    darknessOverlay.style.transition = 'opacity 2.4s cubic-bezier(0.22, 1, 0.36, 1)';
+
+                    requestAnimationFrame(function () {
+                        darknessOverlay.classList.add('is-faded');
+                    });
+
+                    playTrackFromStart();
+
+                    if (rafId) {
+                        cancelAnimationFrame(rafId);
+                    }
+                    rafId = requestAnimationFrame(renderFrame);
+                } catch (err) {
+                    reportError(err);
+                }
+            }
+
+            window.addEventListener('load', function () {
+                resizeCanvas();
+                startScene();
+            });
+        })();
+    </script>
+</body>
+</html>
+```
